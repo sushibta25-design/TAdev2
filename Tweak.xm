@@ -5,6 +5,7 @@
 #import <sys/socket.h>
 #import <dlfcn.h>
 #import <substrate.h>
+#import <unistd.h>
 
 static NSString *TAPath(void) {
     return [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/TAdev2_network.txt"];
@@ -35,6 +36,38 @@ static void TALog(NSString *fmt, ...) {
     NSLog(@"[TADEV2] %@", msg);
 }
 
+static BOOL TAIsRTSPSocket(int fd) {
+    struct sockaddr_storage ss;
+    socklen_t slen = sizeof(ss);
+    if (getpeername(fd, (struct sockaddr *)&ss, &slen) != 0) return NO;
+
+    if (ss.ss_family == AF_INET) {
+        struct sockaddr_in *a = (struct sockaddr_in *)&ss;
+        return ntohs(a->sin_port) == 554;
+    }
+    if (ss.ss_family == AF_INET6) {
+        struct sockaddr_in6 *a6 = (struct sockaddr_in6 *)&ss;
+        return ntohs(a6->sin6_port) == 554;
+    }
+    return NO;
+}
+
+static void TALogRTSPBytes(NSString *direction, int fd, const void *buf, size_t len) {
+    if (!buf || len == 0 || !TAIsRTSPSocket(fd)) return;
+
+    size_t cap = MIN(len, (size_t)8192);
+    NSData *data = [NSData dataWithBytes:buf length:cap];
+    NSString *s = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+
+    if (s.length) {
+        NSString *clean = [s stringByReplacingOccurrencesOfString:@"\r" withString:@"\\r"];
+        clean = [clean stringByReplacingOccurrencesOfString:@"\n" withString:@"\\n\n"];
+        TALog(@"RTSP %@ fd=%d len=%zu\n%@", direction, fd, len, clean);
+    } else {
+        TALog(@"RTSP %@ fd=%d len=%zu [binary/non-UTF8]", direction, fd, len);
+    }
+}
+
 %hook NSMutableURLRequest
 - (void)setURL:(NSURL *)url {
     TALog(@"REQUEST setURL=%@", url ? url.absoluteString : @"(null)");
@@ -59,6 +92,10 @@ static void TALog(NSString *fmt, ...) {
 %end
 
 static int (*orig_connect)(int, const struct sockaddr *, socklen_t);
+static ssize_t (*orig_send)(int, const void *, size_t, int);
+static ssize_t (*orig_recv)(int, void *, size_t, int);
+static ssize_t (*orig_write)(int, const void *, size_t);
+static ssize_t (*orig_read)(int, void *, size_t);
 
 static int ta_connect(int sockfd, const struct sockaddr *addr, socklen_t len) {
     if (addr) {
@@ -69,24 +106,51 @@ static int ta_connect(int sockfd, const struct sockaddr *addr, socklen_t len) {
             const struct sockaddr_in *a = (const struct sockaddr_in *)addr;
             if (inet_ntop(AF_INET, &(a->sin_addr), ip, sizeof(ip))) {
                 port = ntohs(a->sin_port);
-                TALog(@"CONNECT IPv4 %s:%d", ip, port);
+                TALog(@"CONNECT IPv4 %s:%d fd=%d", ip, port, sockfd);
             }
         } else if (addr->sa_family == AF_INET6) {
             const struct sockaddr_in6 *a6 = (const struct sockaddr_in6 *)addr;
             if (inet_ntop(AF_INET6, &(a6->sin6_addr), ip, sizeof(ip))) {
                 port = ntohs(a6->sin6_port);
-                TALog(@"CONNECT IPv6 %s:%d", ip, port);
+                TALog(@"CONNECT IPv6 %s:%d fd=%d", ip, port, sockfd);
             }
         }
     }
     return orig_connect(sockfd, addr, len);
 }
 
+static ssize_t ta_send(int fd, const void *buf, size_t len, int flags) {
+    TALogRTSPBytes(@"SEND", fd, buf, len);
+    return orig_send(fd, buf, len, flags);
+}
+
+static ssize_t ta_recv(int fd, void *buf, size_t len, int flags) {
+    ssize_t n = orig_recv(fd, buf, len, flags);
+    if (n > 0) TALogRTSPBytes(@"RECV", fd, buf, (size_t)n);
+    return n;
+}
+
+static ssize_t ta_write(int fd, const void *buf, size_t len) {
+    TALogRTSPBytes(@"WRITE", fd, buf, len);
+    return orig_write(fd, buf, len);
+}
+
+static ssize_t ta_read(int fd, void *buf, size_t len) {
+    ssize_t n = orig_read(fd, buf, len);
+    if (n > 0) TALogRTSPBytes(@"READ", fd, buf, (size_t)n);
+    return n;
+}
+
 %ctor {
     @autoreleasepool {
-        TALog(@"TAdev2 loaded process=%@ bundle=%@",
+        TALog(@"TAdev2 V3 loaded process=%@ bundle=%@",
               [NSProcessInfo processInfo].processName ?: @"(null)",
               [NSBundle mainBundle].bundleIdentifier ?: @"(null)");
+
         MSHookFunction((void *)&connect, (void *)&ta_connect, (void **)&orig_connect);
+        MSHookFunction((void *)&send, (void *)&ta_send, (void **)&orig_send);
+        MSHookFunction((void *)&recv, (void *)&ta_recv, (void **)&orig_recv);
+        MSHookFunction((void *)&write, (void *)&ta_write, (void **)&orig_write);
+        MSHookFunction((void *)&read, (void *)&ta_read, (void **)&orig_read);
     }
 }
