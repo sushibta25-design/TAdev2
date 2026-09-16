@@ -1,0 +1,42 @@
+name: Build TAdev2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          brew install ldid
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Download iOS SDKs
+        run: |
+          git clone --depth=1 https://github.com/theos/sdks.git $HOME/theos/sdks
+
+      - name: Build rootless package
+        run: |
+          export THEOS=$HOME/theos
+          make clean
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+
+      - name: Show packages
+        run: |
+          find packages -type f -maxdepth 2 -print || true
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: TAdev2-rootless
+          path: packages/*.deb
+          if-no-files-found: error
