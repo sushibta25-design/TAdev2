@@ -1,39 +1,64 @@
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
-static NSString *const TADEVLogPath = @"/var/mobile/TAdev2.log";
+static NSString * const TAProbePath = @"/var/mobile/TAdev2_probe.txt";
 
-static void TADEVLog(NSString *fmt, ...) {
+static void TALog(NSString *format, ...) {
     va_list args;
-    va_start(args, fmt);
-    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_start(args, format);
+    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
     va_end(args);
-    NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], msg];
+
+    NSString *line = [NSString stringWithFormat:
+                      @"%@ %@\n",
+                      [NSDate date],
+                      msg];
+
     NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+
     NSFileManager *fm = [NSFileManager defaultManager];
-    if (![fm fileExistsAtPath:TADEVLogPath]) [data writeToFile:TADEVLogPath atomically:YES];
-    else {
-        NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:TADEVLogPath];
-        [h seekToEndOfFile]; [h writeData:data]; [h closeFile];
+
+    if (![fm fileExistsAtPath:TAProbePath]) {
+        [data writeToFile:TAProbePath atomically:YES];
+    } else {
+        NSFileHandle *fh =
+            [NSFileHandle fileHandleForWritingAtPath:TAProbePath];
+
+        if (fh) {
+            [fh seekToEndOfFile];
+            [fh writeData:data];
+            [fh closeFile];
+        }
     }
-}
 
-%hook NSURLSession
-- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSData *, NSURLResponse *, NSError *))completionHandler {
-    TADEVLog(@"[HTTP] %@ %@", request.HTTPMethod ?: @"GET", request.URL.absoluteString ?: @"");
-    return %orig;
+    NSLog(@"[TADEV2] %@", msg);
 }
-%end
-
-%hook NSURLSessionTask
-- (void)resume {
-    NSURLRequest *r = self.currentRequest ?: self.originalRequest;
-    if (r.URL) TADEVLog(@"[TASK] %@", r.URL.absoluteString);
-    %orig;
-}
-%end
 
 %ctor {
     @autoreleasepool {
-        TADEVLog(@"[START] process=%@ bundle=%@", NSProcessInfo.processInfo.processName, NSBundle.mainBundle.bundleIdentifier);
+        TALog(@"================================");
+        TALog(@"TAdev2 PROBE V2 LOADED");
+        TALog(@"Process = %@", NSProcessInfo.processInfo.processName);
+        TALog(@"Bundle  = %@", NSBundle.mainBundle.bundleIdentifier);
+        TALog(@"BundlePath = %@", NSBundle.mainBundle.bundlePath);
+        TALog(@"Home = %@", NSHomeDirectory());
+
+        dispatch_after(
+            dispatch_time(DISPATCH_TIME_NOW,
+                          (int64_t)(3.0 * NSEC_PER_SEC)),
+            dispatch_get_main_queue(), ^{
+
+                TALog(@"App alive after 3 seconds");
+
+                UIApplication *app = UIApplication.sharedApplication;
+
+                TALog(@"UIApplication = %@", app);
+
+                for (UIScene *scene in app.connectedScenes) {
+                    TALog(@"Scene = %@ state=%ld",
+                          scene,
+                          (long)scene.activationState);
+                }
+            });
     }
 }
