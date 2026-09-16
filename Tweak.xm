@@ -1,93 +1,58 @@
-#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-
-static NSString *TAGetLogPath(void) {
-    NSString *home = NSHomeDirectory();
-    NSString *docs = [home stringByAppendingPathComponent:@"Documents"];
-
-    [[NSFileManager defaultManager]
-        createDirectoryAtPath:docs
-        withIntermediateDirectories:YES
-        attributes:nil
-        error:nil];
-
-    return [docs stringByAppendingPathComponent:@"TAdev2_probe.txt"];
-}
-
-static void TALog(NSString *format, ...) {
-    va_list args;
-    va_start(args, format);
-    NSString *msg =
-        [[NSString alloc] initWithFormat:format arguments:args];
-    va_end(args);
-
-    NSString *path = TAGetLogPath();
-
-    NSString *line =
-        [NSString stringWithFormat:@"%@ %@\n",
-         [NSDate date], msg];
-
-    NSData *data =
-        [line dataUsingEncoding:NSUTF8StringEncoding];
-
-    NSFileManager *fm =
-        [NSFileManager defaultManager];
-
-    if (![fm fileExistsAtPath:path]) {
-        [data writeToFile:path atomically:YES];
-    } else {
-        NSFileHandle *fh =
-            [NSFileHandle fileHandleForWritingAtPath:path];
-
-        if (fh) {
-            [fh seekToEndOfFile];
-            [fh writeData:data];
-            [fh closeFile];
-        }
-    }
-
-    NSLog(@"[TADEV2] %@", msg);
-}
+#import <Foundation/Foundation.h>
 
 %ctor {
     @autoreleasepool {
-
-        TALog(@"================================");
-        TALog(@"TAdev2 PROBE V3 LOADED");
-
-        TALog(@"Process=%@",
-              NSProcessInfo.processInfo.processName);
-
-        TALog(@"Bundle=%@",
+        NSLog(@"[TADEV2] dylib loaded into %@ / %@",
+              NSProcessInfo.processInfo.processName,
               NSBundle.mainBundle.bundleIdentifier);
 
-        TALog(@"BundlePath=%@",
-              NSBundle.mainBundle.bundlePath);
-
-        TALog(@"HOME=%@",
-              NSHomeDirectory());
-
-        TALog(@"LOG=%@",
-              TAGetLogPath());
-
         dispatch_after(
-            dispatch_time(
-                DISPATCH_TIME_NOW,
-                (int64_t)(5 * NSEC_PER_SEC)),
+            dispatch_time(DISPATCH_TIME_NOW,
+                          (int64_t)(2.0 * NSEC_PER_SEC)),
             dispatch_get_main_queue(), ^{
 
-                TALog(@"PROBE ALIVE AFTER 5 SECONDS");
+            UIAlertController *alert =
+                [UIAlertController
+                    alertControllerWithTitle:@"TAdev2 INJECTED"
+                    message:[NSString stringWithFormat:
+                        @"Process: %@\nBundle: %@",
+                        NSProcessInfo.processInfo.processName,
+                        NSBundle.mainBundle.bundleIdentifier]
+                    preferredStyle:UIAlertControllerStyleAlert];
 
-                UIApplication *app =
-                    UIApplication.sharedApplication;
+            [alert addAction:
+                [UIAlertAction actionWithTitle:@"OK"
+                                         style:UIAlertActionStyleDefault
+                                       handler:nil]];
 
-                TALog(@"UIApplication=%@", app);
+            UIWindow *window = nil;
 
-                for (UIScene *scene in app.connectedScenes) {
-                    TALog(@"Scene=%@ state=%ld",
-                          scene,
-                          (long)scene.activationState);
+            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+                if ([scene isKindOfClass:[UIWindowScene class]]) {
+                    UIWindowScene *ws = (UIWindowScene *)scene;
+
+                    for (UIWindow *w in ws.windows) {
+                        if (w.isKeyWindow) {
+                            window = w;
+                            break;
+                        }
+                    }
                 }
-            });
+                if (window) break;
+            }
+
+            UIViewController *vc = window.rootViewController;
+
+            while (vc.presentedViewController) {
+                vc = vc.presentedViewController;
+            }
+
+            if (vc) {
+                [vc presentViewController:alert
+                                 animated:YES
+                               completion:nil];
+            }
+        });
     }
 }
