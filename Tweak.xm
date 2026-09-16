@@ -1,58 +1,26 @@
-#import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
-%ctor {
-    @autoreleasepool {
-        NSLog(@"[TADEV2] dylib loaded into %@ / %@",
-              NSProcessInfo.processInfo.processName,
-              NSBundle.mainBundle.bundleIdentifier);
+#import <arpa/inet.h>
+#import <netdb.h>
+#import <sys/socket.h>
+#import <dlfcn.h>
 
-        dispatch_after(
-            dispatch_time(DISPATCH_TIME_NOW,
-                          (int64_t)(2.0 * NSEC_PER_SEC)),
-            dispatch_get_main_queue(), ^{
-
-            UIAlertController *alert =
-                [UIAlertController
-                    alertControllerWithTitle:@"TAdev2 INJECTED"
-                    message:[NSString stringWithFormat:
-                        @"Process: %@\nBundle: %@",
-                        NSProcessInfo.processInfo.processName,
-                        NSBundle.mainBundle.bundleIdentifier]
-                    preferredStyle:UIAlertControllerStyleAlert];
-
-            [alert addAction:
-                [UIAlertAction actionWithTitle:@"OK"
-                                         style:UIAlertActionStyleDefault
-                                       handler:nil]];
-
-            UIWindow *window = nil;
-
-            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-                if ([scene isKindOfClass:[UIWindowScene class]]) {
-                    UIWindowScene *ws = (UIWindowScene *)scene;
-
-                    for (UIWindow *w in ws.windows) {
-                        if (w.isKeyWindow) {
-                            window = w;
-                            break;
-                        }
-                    }
-                }
-                if (window) break;
-            }
-
-            UIViewController *vc = window.rootViewController;
-
-            while (vc.presentedViewController) {
-                vc = vc.presentedViewController;
-            }
-
-            if (vc) {
-                [vc presentViewController:alert
-                                 animated:YES
-                               completion:nil];
-            }
-        });
-    }
+static NSString *TAPath(void) {
+    return [NSHomeDirectory() stringByAppendingPathComponent:@"Documents/TAdev2_network.txt"];
 }
+
+static void TALog(NSString *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    NSString *msg = [[NSString alloc] initWithFormat:fmt arguments:args];
+    va_end(args);
+
+    NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], msg];
+    NSData *data = [line dataUsingEncoding:NSUTF8StringEncoding];
+
+    NSString *path = TAPath();
+
+    @synchronized([NSFileManager class]) {
+        if (![[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            [data writeToFile:path atomically
