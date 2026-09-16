@@ -1,0 +1,9 @@
+Package: com.tadev2.probe
+Name: TAdev2
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Local diagnostic probe for app network/media discovery
+Maintainer: TAdev
+Author: TAdev
+Section: Tweaks
+Depends: mobilesubstrate
